@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kanban Board</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f0f0;
+        }
+
+        .board {
+            display: flex;
+            gap: 20px;
+            overflow-x: auto;
+            padding: 20px 0;
+        }
+
+        .column {
+            background: #ebecf0;
+            border-radius: 5px;
+            min-width: 300px;
+            padding: 10px;
+        }
+
+        .column-header {
+            font-weight: bold;
+            margin-bottom: 10px;
+            padding: 5px;
+            text-align: center;
+        }
+
+        .tasks {
+            min-height: 100px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+
+        .task {
+            background: white;
+            border-radius: 3px;
+            padding: 10px;
+            margin-bottom: 10px;
+            cursor: grab;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+        }
+
+        .task.dragging {
+            opacity: 0.5;
+            cursor: grabbing;
+        }
+
+        .add-task {
+            background: none;
+            border: none;
+            color: #5e6c84;
+            cursor: pointer;
+            padding: 10px;
+            width: 100%;
+            text-align: left;
+        }
+
+        .add-task:hover {
+            background-color: rgba(0,0,0,0.05);
+        }
+
+        .priority-low { border-left: 4px solid #4CAF50; }
+        .priority-medium { border-left: 4px solid #FFC107; }
+        .priority-high { border-left: 4px solid #F44336; }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+
+        .modal-content h3 {
+            margin-top: 0;
+            color: #333;
+        }
+
+        .modal-content input {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+
+        .modal-content select {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+
+        .modal-content button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+
+        .modal-content button[onclick="addTask()"] {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        .modal-content button[onclick="closeModal()"] {
+            background-color: #f44336;
+            color: white;
+        }
+
+        .modal-content button:hover {
+            opacity: 0.9;
+        }
+
+        .notification {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 12px 24px;
+            background: #4CAF50;
+            color: white;
+            border-radius: 4px;
+            display: none;
+        }
+		 /* Стили для контекстного меню */
+        .context-menu {
+            position: absolute;
+            background: white;
+            border-radius: 4px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 1000;
+            display: none;
+        }
+
+        .context-menu-item {
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .context-menu-item:hover {
+            background-color: #f0f0f0;
+        }
+
+        .context-menu-item.delete {
+            color: #f44336;
+        }
+    </style>
+</head>
+<body>
+    <div class="board">
+        <div class="column" id="todo">
+            <div class="column-header">Нужно сделать</div>
+            <div class="tasks" ondrop="drop(event)" ondragover="allowDrop(event)"></div>
+            <button class="add-task" onclick="showModal('todo')">+ Добавить задачу</button>
+        </div>
+
+        <div class="column" id="progress">
+            <div class="column-header">В работе</div>
+            <div class="tasks" ondrop="drop(event)" ondragover="allowDrop(event)"></div>
+        </div>
+
+        <div class="column" id="done">
+            <div class="column-header">Готово</div>
+            <div class="tasks" ondrop="drop(event)" ondragover="allowDrop(event)"></div>
+        </div>
+    </div>
+
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <h3>Новая задача</h3>
+            <input type="text" id="taskInput" placeholder="Введите название задачи">
+            <select id="taskPriority">
+                <option value="low">Низкий</option>
+                <option value="medium">Средний</option>
+                <option value="high">Высокий</option>
+            </select>
+            <button onclick="addTask()">Добавить</button>
+            <button onclick="closeModal()">Отмена</button>
+        </div>
+    </div>
+
+    <div id="notification" class="notification"></div>
+
+    <div id="contextMenu" class="context-menu">
+        <div class="context-menu-item" onclick="editTask()">Редактировать</div>
+        <div class="context-menu-item" onclick="changePriority('low')">Низкий приоритет</div>
+        <div class="context-menu-item" onclick="changePriority('medium')">Средний приоритет</div>
+        <div class="context-menu-item" onclick="changePriority('high')">Высокий приоритет</div>
+        <div class="context-menu-item delete" onclick="deleteCurrentTask()">Удалить</div>
+    </div>
+
+    <script>
+	const API_URL = 'http://192.168.1.2:2000/api/kanban/tasks';
+		let currentColumn = null;
+        let currentTask = null;
+        let tasks = [];
+
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadTasksFromAPI();
+            setupContextMenu();
+        });
+
+    
+      async function loadTasksFromAPI() {
+    try {
+        const response = await fetch(API_URL);
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки задач');
+        }
+        let rawTasks = await response.json();
+
+        console.log("Полученные задачи:", rawTasks);
+
+        tasks = rawTasks.map(task => ({
+            id: task.Id,
+            text: task.Text,
+            priority: task.Priority,
+            status: task.Status
+        }));
+
+        tasks.forEach(task => {
+            if (!task.id || !task.status) {
+                console.error(`Ошибка: задача ${JSON.stringify(task)} не имеет ID или статуса.`);
+                return;
+            }
+            createTaskElement(task);
+        });
+
+        showNotification('Задачи загружены');
+    } catch (error) {
+        showNotification('Ошибка загрузки задач', true);
+        console.error(error);
+    }
+}
+
+
+  async function saveTaskToAPI(task) {
+    try {
+        const method = task.Id ? 'PUT' : 'POST';
+        const url = task.Id ? `${API_URL}/${task.Id}` : API_URL;
+        const response = await fetch(url, {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(task),
+        });
+
+        if (!response.ok) {
+            throw new Error('Ошибка сохранения задачи');
+        }
+
+        // Проверим, что сервер действительно возвращает данные
+        const savedTask = await response.json();
+
+        if (!savedTask || Object.keys(savedTask).length === 0) {
+            throw new Error('Пустой ответ от сервера');
+        }
+
+        // Вернем задачу с ID
+        return savedTask;
+
+    } catch (error) {
+        showNotification('Ошибка сохранения задачи', true);
+        console.error(error);
+    }
+}
+
+    
+        async function deleteTaskFromAPI(taskId) {
+            try {
+                const response = await fetch(`${API_URL}/${taskId}`, {
+                    method: 'DELETE',
+                });
+                if (!response.ok) {
+                    throw new Error('Ошибка удаления задачи');
+                }
+                showNotification('Задача удалена');
+            } catch (error) {
+                showNotification('Ошибка удаления задачи', true);
+                console.error(error);
+            }
+        }
+
+  
+function createTaskElement(taskData) {
+    const column = document.getElementById(taskData.status);
+    if (!column) {
+        console.error(`Не найдена колонка с ID: ${taskData.status}`);
+        return;
+    }
+
+    const taskContainer = column.querySelector('.tasks');
+    if (!taskContainer) {
+        console.error(`Не найден контейнер задач в колонке: ${taskData.status}`);
+        return;
+    }
+
+    const task = document.createElement('div');
+    task.className = `task priority-${taskData.priority}`;
+    task.draggable = true;
+    task.textContent = taskData.text;
+    task.id = taskData.id;
+    task.dataset.priority = taskData.priority;
+    task.ondragstart = dragStart;
+    task.ondragend = dragEnd;
+
+    taskContainer.appendChild(task);
+}
+
+
+        function allowDrop(ev) {
+            ev.preventDefault();
+        }
+
+        function dragStart(ev) {
+            ev.dataTransfer.setData("text", ev.target.id);
+            ev.target.classList.add('dragging');
+        }
+
+        function dragEnd(ev) {
+            ev.target.classList.remove('dragging');
+        }
+
+        async function drop(ev) {
+            ev.preventDefault();
+            const taskId = ev.dataTransfer.getData("text");
+            const taskElement = document.getElementById(taskId);
+            const targetColumn = ev.target.closest('.tasks');
+
+            if (targetColumn && taskElement) {
+                targetColumn.appendChild(taskElement);
+                const newStatus = targetColumn.parentElement.id;
+                const task = tasks.find(t => t.id === taskId);
+                if (task) {
+                    task.status = newStatus;
+                    await saveTaskToAPI(task);
+                    showNotification('Задача перемещена');
+                }
+            }
+        }
+
+  
+        async function addTask() {
+    const input = document.getElementById('taskInput');
+    const priority = document.getElementById('taskPriority').value;
+    
+    if (input.value.trim()) {
+        const taskData = {
+            Id: 1, //в идеале айдишник на сервер повесить
+            Text: input.value,
+            Priority: priority,
+            Status: currentColumn
+        };
+
+        console.log("Отправляем задачу:", taskData);
+
+        const savedTask = await saveTaskToAPI(taskData);
+        if (savedTask) {
+            tasks.push({
+                id: savedTask.Id, 
+                text: savedTask.Text, 
+                priority: savedTask.Priority, 
+                status: savedTask.Status
+            });
+            createTaskElement({
+                id: savedTask.Id, 
+                text: savedTask.Text, 
+                priority: savedTask.Priority, 
+                status: savedTask.Status
+            });
+
+            input.value = '';
+            closeModal();
+            showNotification('Задача добавлена');
+        }
+    }
+}
+
+        // редактироване
+        async function editTask() {
+            const newText = prompt('Введите новый текст задачи:', currentTask.textContent);
+            if (newText) {
+                currentTask.textContent = newText;
+                const task = tasks.find(t => t.id === currentTask.id);
+                if (task) {
+                    task.text = newText;
+                    await saveTaskToAPI(task);
+                    showNotification('Задача обновлена');
+                }
+            }
+            hideContextMenu();
+        }
+
+        // именение приоритета
+        async function changePriority(priority) {
+            currentTask.className = `task priority-${priority}`;
+            currentTask.dataset.priority = priority;
+            const task = tasks.find(t => t.id === currentTask.id);
+            if (task) {
+                task.priority = priority;
+                await saveTaskToAPI(task);
+                showNotification('Приоритет изменён');
+            }
+            hideContextMenu();
+        }
+
+        //кдаление
+        async function deleteCurrentTask() {
+            if (confirm('Вы уверены, что хотите удалить задачу?')) {
+                await deleteTaskFromAPI(currentTask.id);
+                tasks = tasks.filter(t => t.id !== currentTask.id);
+                currentTask.remove();
+                showNotification('Задача удалена');
+            }
+            hideContextMenu();
+        }
+
+// настройка менюшки
+function setupContextMenu() {
+    document.addEventListener('click', () => {
+        hideContextMenu();
+    });
+
+    document.addEventListener('contextmenu', (event) => {
+        if (event.target.classList.contains('task')) {
+            event.preventDefault();
+            showContextMenu(event);
+        }
+    });
+}
+
+// показать меню
+function showContextMenu(event) {
+    currentTask = event.target;
+    const contextMenu = document.getElementById('contextMenu');
+    contextMenu.style.display = 'block';
+    contextMenu.style.left = `${event.pageX}px`;
+    contextMenu.style.top = `${event.pageY}px`;
+}
+
+// скрыть меню
+function hideContextMenu() {
+    const contextMenu = document.getElementById('contextMenu');
+    contextMenu.style.display = 'none';
+}
+
+// Уведомления
+function showNotification(text, isError = false) {
+    const notification = document.getElementById('notification');
+    notification.textContent = text;
+    notification.style.background = isError ? '#F44336' : '#4CAF50';
+    notification.style.display = 'block';
+    setTimeout(() => notification.style.display = 'none', 3000);
+}
+
+// Показ модального окна
+function showModal(columnId) {
+    currentColumn = columnId;
+    document.getElementById('modal').style.display = 'flex';
+}
+
+// Закрытие модального окна
+function closeModal() {
+    document.getElementById('modal').style.display = 'none';
+    currentColumn = null;
+}
+
+// Закрытие модального окна при клике вне его
+window.onclick = function(event) {
+    const modal = document.getElementById('modal');
+    if (event.target === modal) {
+        closeModal();
+    }
+};
+	</script>
+</body>
+</html>
